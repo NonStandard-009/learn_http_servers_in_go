@@ -1,19 +1,22 @@
 package main
 
 import (
-	"fmt"
+	"log"
 	"net/http"
 )
 
+const projectRoot = "/home/thanatos/Workspace/boot_dev/back_end_dev_path/learn_http_servers_in_go/"
+const port = "8080"
+
 func main() {
-	newMultiplexer := http.NewServeMux()
+	mux := http.NewServeMux()
+	mux.Handle("/", http.FileServer(http.Dir(projectRoot)))
 
-	newServer := http.Server{
-		Handler: newMultiplexer,
-		Addr:    ":8080",
+	server := &http.Server{
+		Handler: mux,
+		Addr:    ":" + port,
 	}
 
-	if err := newServer.ListenAndServe(); err != nil {
-		fmt.Printf("%v", err)
-	}
+	log.Printf("Serving files from '%s' on port: %s\n", projectRoot, port)
+	log.Fatal(server.ListenAndServe())
 }
