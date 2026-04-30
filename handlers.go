@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -38,6 +39,30 @@ func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
 		cfg.fileserverHits.Add(1)
 		next.ServeHTTP(w, r)
 	})
+}
+
+func validedChirpHandler(w http.ResponseWriter, r *http.Request) {
+	type chirp struct {
+		Body string `json:"body"`
+	}
+
+	decoder := json.NewDecoder(r.Body)
+	c := chirp{}
+
+	if err := decoder.Decode(&c); err != nil {
+		log.Printf("Error decoding request: %s\n", err)
+		respondWithError(w, 400, "Error while trying to decode request")
+		return
+	}
+
+	if len(c.Body) > 140 {
+		respondWithError(w, 400, "Chirp is too long")
+	} else {
+		type valid struct {
+			Valid bool `json:"valid"`
+		}
+		respondWithJSON(w, 200, valid{Valid: true})
+	}
 }
 
 func healthzHandler(w http.ResponseWriter, r *http.Request) {
