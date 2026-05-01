@@ -15,26 +15,28 @@ const port = "8080"
 
 func main() {
 	godotenv.Load()
-	dbURL := os.Getenv("DB_URL")
 
+	dbURL := os.Getenv("DB_URL")
 	db, err := sql.Open("postgres", dbURL)
 	if err != nil {
 		log.Printf("Error opening database")
 	}
-
 	dbQueries := database.New(db)
-	handler := http.StripPrefix("/app", http.FileServer(http.Dir(".")))
+
 	cfg := apiConfig{
 		dbQueries: dbQueries,
 	}
 
 	mux := http.NewServeMux()
+
+	handler := http.StripPrefix("/app", http.FileServer(http.Dir(".")))
 	mux.Handle("/app/", cfg.middlewareMetricsInc(handler))
 
-	mux.HandleFunc("GET /api/healthz", healthzHandler)
+	mux.HandleFunc("POST /api/users", cfg.createUsersHandler)
 	mux.HandleFunc("GET /admin/metrics", cfg.metricsHandler)
 	mux.HandleFunc("POST /admin/reset", cfg.resetHandler)
 	mux.HandleFunc("POST /api/validate_chirp", validedChirpHandler)
+	mux.HandleFunc("GET /api/healthz", healthzHandler)
 
 	server := &http.Server{
 		Handler: mux,

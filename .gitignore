@@ -1,2 +1,5 @@
+# Ignore env
+.env
+
 # Ignore Binaries
 bin/

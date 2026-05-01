@@ -15,6 +15,34 @@ type apiConfig struct {
 	dbQueries      *database.Queries
 }
 
+func (cfg *apiConfig) createUsersHandler(w http.ResponseWriter, r *http.Request) {
+	type params struct {
+		Email string `json:"email"`
+	}
+	createUserParams := params{}
+
+	if err := helperDecode(r, &createUserParams); err != nil {
+		respondWithError(w, 400, "Error while trying to decode request")
+		return
+	}
+
+	user, err := cfg.dbQueries.CreateUser(r.Context(), createUserParams.Email)
+	if err != nil {
+		log.Printf("Error creating user: %v", err)
+		respondWithError(w, 500, "Error while trying to create user")
+		return
+	}
+
+	newUser := User{
+		ID:        user.ID,
+		CreatedAt: user.CreatedAt,
+		UpdatedAt: user.UpdatedAt,
+		Email:     user.Email,
+	}
+
+	respondWithJSON(w, 201, newUser)
+}
+
 func (cfg *apiConfig) metricsHandler(w http.ResponseWriter, r *http.Request) {
 	htmlContent := fmt.Sprintf(`<html>
   <body>
@@ -48,12 +76,9 @@ func validedChirpHandler(w http.ResponseWriter, r *http.Request) {
 	type chirp struct {
 		Body string `json:"body"`
 	}
-
-	decoder := json.NewDecoder(r.Body)
 	c := chirp{}
 
-	if err := decoder.Decode(&c); err != nil {
-		log.Printf("Error decoding request: %s\n", err)
+	if err := helperDecode(r, &c); err != nil {
 		respondWithError(w, 400, "Error while trying to decode request")
 		return
 	}
@@ -84,4 +109,12 @@ func healthzHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Printf("Error writting response: %v\n", err)
 	}
+}
+
+func helperDecode(r *http.Request, payload any) error {
+	decoder := json.NewDecoder(r.Body)
+	if err := decoder.Decode(payload); err != nil {
+		return fmt.Errorf("Failure to decode request: %w", err)
+	}
+	return nil
 }

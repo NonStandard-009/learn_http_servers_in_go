@@ -5,14 +5,16 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
+
+	"github.com/google/uuid"
 )
 
-func respondWithError(w http.ResponseWriter, code int, msg string) {
-	type Error struct {
-		Error string `json:"error"`
-	}
-
-	respondWithJSON(w, code, Error{Error: msg})
+type User struct {
+	ID        uuid.UUID `json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Email     string    `json:"email"`
 }
 
 func respondWithJSON(w http.ResponseWriter, code int, payload any) {
@@ -26,6 +28,14 @@ func respondWithJSON(w http.ResponseWriter, code int, payload any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	w.Write(data)
+}
+
+func respondWithError(w http.ResponseWriter, code int, msg string) {
+	type Error struct {
+		Error string `json:"error"`
+	}
+
+	respondWithJSON(w, code, Error{Error: msg})
 }
 
 func cleanResponse(profanities map[string]struct{}, body string) string {
