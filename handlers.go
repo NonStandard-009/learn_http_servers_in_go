@@ -20,21 +20,21 @@ func (cfg *apiConfig) createUsersHandler(w http.ResponseWriter, r *http.Request)
 	type params struct {
 		Email string `json:"email"`
 	}
-	createUserParams := params{}
+	newUserParams := params{}
 
-	if err := helperDecode(r, &createUserParams); err != nil {
+	if err := helperDecode(r, &newUserParams); err != nil {
 		respondWithError(w, 400, "Error while trying to decode request")
 		return
 	}
 
-	user, err := cfg.dbQueries.CreateUser(r.Context(), createUserParams.Email)
+	user, err := cfg.dbQueries.CreateUser(r.Context(), newUserParams.Email)
 	if err != nil {
 		log.Printf("Error while trying to create user: %v", err)
 		respondWithError(w, 500, "Error while trying to create user")
 		return
 	}
 
-	newUser := User{
+	newUser := UserMain{
 		ID:        user.ID,
 		CreatedAt: user.CreatedAt,
 		UpdatedAt: user.UpdatedAt,
@@ -42,6 +42,46 @@ func (cfg *apiConfig) createUsersHandler(w http.ResponseWriter, r *http.Request)
 	}
 
 	respondWithJSON(w, 201, newUser)
+}
+
+func (cfg *apiConfig) createChirpHandler(w http.ResponseWriter, r *http.Request) {
+	newChirp := ChirpMain{}
+
+	if err := helperDecode(r, &newChirp); err != nil {
+		respondWithError(w, 400, "Error while trying to decode request")
+		return
+	}
+
+	if len(newChirp.Body) > 140 {
+		respondWithError(w, 400, "Chirp is too long")
+		return
+	}
+
+	cleanMsg := cleanResponse(
+		map[string]struct{}{
+			"kerfuffle": {},
+			"sharbert":  {},
+			"fornax":    {},
+		}, newChirp.Body)
+
+	newChirpParams := database.CreateChirpParams{
+		Body:   cleanMsg,
+		UserID: newChirp.UserID,
+	}
+
+	chirp, err := cfg.dbQueries.CreateChirp(r.Context(), newChirpParams)
+	if err != nil {
+		log.Printf("Error while trying to create chirp: %v", err)
+		respondWithError(w, 500, "Error while trying to create chirp")
+		return
+	}
+
+	newChirp = ChirpMain{
+		Body:   chirp.Body,
+		UserID: chirp.UserID,
+	}
+
+	respondWithJSON(w, 201, newChirp)
 }
 
 func (cfg *apiConfig) metricsHandler(w http.ResponseWriter, r *http.Request) {
@@ -82,36 +122,6 @@ func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
 		cfg.fileserverHits.Add(1)
 		next.ServeHTTP(w, r)
 	})
-}
-
-func validedChirpHandler(w http.ResponseWriter, r *http.Request) {
-	type chirp struct {
-		Body string `json:"body"`
-	}
-	c := chirp{}
-
-	if err := helperDecode(r, &c); err != nil {
-		respondWithError(w, 400, "Error while trying to decode request")
-		return
-	}
-
-	if len(c.Body) > 140 {
-		respondWithError(w, 400, "Chirp is too long")
-		return
-	}
-
-	type valid struct {
-		CleanedBody string `json:"cleaned_body"`
-	}
-
-	cleanMsg := cleanResponse(
-		map[string]struct{}{
-			"kerfuffle": {},
-			"sharbert":  {},
-			"fornax":    {},
-		}, c.Body)
-
-	respondWithJSON(w, 200, valid{CleanedBody: cleanMsg})
 }
 
 func healthzHandler(w http.ResponseWriter, r *http.Request) {

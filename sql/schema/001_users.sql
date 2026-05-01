@@ -5,5 +5,6 @@ CREATE TABLE users(
 	updated_at TIMESTAMP NOT NULL,
 	email TEXT UNIQUE NOT NULL
 );
+
 -- +goose Down
 DROP TABLE IF EXISTS users;

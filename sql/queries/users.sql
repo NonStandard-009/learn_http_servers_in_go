@@ -6,7 +6,7 @@ INSERT INTO users (
 	NOW(),
 	NOW(),
 	$1
-) 
+)
 RETURNING *;
 
 -- name: DeleteAllUsers :exec
