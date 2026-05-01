@@ -34,7 +34,7 @@ func (cfg *apiConfig) createUsersHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	newUser := UserMain{
+	newUser := UserJSON{
 		ID:        user.ID,
 		CreatedAt: user.CreatedAt,
 		UpdatedAt: user.UpdatedAt,
@@ -45,7 +45,7 @@ func (cfg *apiConfig) createUsersHandler(w http.ResponseWriter, r *http.Request)
 }
 
 func (cfg *apiConfig) createChirpHandler(w http.ResponseWriter, r *http.Request) {
-	newChirp := ChirpMain{}
+	newChirp := ChirpJSON{}
 
 	if err := helperDecode(r, &newChirp); err != nil {
 		respondWithError(w, 400, "Error while trying to decode request")
@@ -76,12 +76,40 @@ func (cfg *apiConfig) createChirpHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	newChirp = ChirpMain{
+	newChirp = ChirpJSON{
 		Body:   chirp.Body,
 		UserID: chirp.UserID,
 	}
 
 	respondWithJSON(w, 201, newChirp)
+}
+
+func (cfg *apiConfig) getAllChirpsHandler(w http.ResponseWriter, r *http.Request) {
+	type ChirpJSONArray struct {
+		Chirps []ChirpJSON `json:"chirps"`
+	}
+
+	getChirps, err := cfg.dbQueries.GetAllChirps(r.Context())
+	if err != nil {
+		log.Printf("Error while trying to retrieve ALL chirps: %v", err)
+		respondWithError(w, 500, "Error while trying to retrieve ALL chirps")
+		return
+	}
+
+	listChirpsForResponse := make([]ChirpJSON, len(getChirps))
+
+	for i, chirp := range getChirps {
+		chirpToJSON := ChirpJSON{
+			ID:        chirp.ID,
+			CreatedAt: chirp.CreatedAt,
+			UpdatedAt: chirp.UpdatedAt,
+			Body:      chirp.Body,
+			UserID:    chirp.UserID,
+		}
+		listChirpsForResponse[i] = chirpToJSON
+	}
+
+	respondWithJSON(w, 200, listChirpsForResponse)
 }
 
 func (cfg *apiConfig) metricsHandler(w http.ResponseWriter, r *http.Request) {
