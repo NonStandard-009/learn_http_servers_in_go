@@ -57,12 +57,21 @@ func validedChirpHandler(w http.ResponseWriter, r *http.Request) {
 
 	if len(c.Body) > 140 {
 		respondWithError(w, 400, "Chirp is too long")
-	} else {
-		type valid struct {
-			Valid bool `json:"valid"`
-		}
-		respondWithJSON(w, 200, valid{Valid: true})
+		return
 	}
+
+	type valid struct {
+		CleanedBody string `json:"cleaned_body"`
+	}
+
+	cleanMsg := cleanResponse(
+		map[string]struct{}{
+			"kerfuffle": {},
+			"sharbert":  {},
+			"fornax":    {},
+		}, c.Body)
+
+	respondWithJSON(w, 200, valid{CleanedBody: cleanMsg})
 }
 
 func healthzHandler(w http.ResponseWriter, r *http.Request) {

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strings"
 )
 
 func respondWithError(w http.ResponseWriter, code int, msg string) {
@@ -25,4 +26,17 @@ func respondWithJSON(w http.ResponseWriter, code int, payload any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	w.Write(data)
+}
+
+func cleanResponse(profanities map[string]struct{}, body string) string {
+	wordsInMsg := strings.Split(body, " ")
+
+	for i, word := range wordsInMsg {
+		loweredWord := strings.ToLower(word)
+		if _, ok := profanities[loweredWord]; ok {
+			wordsInMsg[i] = "****"
+		}
+	}
+
+	return strings.Join(wordsInMsg, " ")
 }
