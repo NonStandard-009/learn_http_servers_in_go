@@ -6,10 +6,13 @@ import (
 	"log"
 	"net/http"
 	"sync/atomic"
+
+	"github.com/NonStandard-009/chirpy/internal/database"
 )
 
 type apiConfig struct {
 	fileserverHits atomic.Int32
+	dbQueries      *database.Queries
 }
 
 func (cfg *apiConfig) metricsHandler(w http.ResponseWriter, r *http.Request) {
