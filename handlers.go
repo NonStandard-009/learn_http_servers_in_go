@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 
 	"github.com/NonStandard-009/chirpy/internal/database"
+	"github.com/google/uuid"
 )
 
 type apiConfig struct {
@@ -77,8 +78,11 @@ func (cfg *apiConfig) createChirpHandler(w http.ResponseWriter, r *http.Request)
 	}
 
 	newChirp = ChirpJSON{
-		Body:   chirp.Body,
-		UserID: chirp.UserID,
+		ID:        chirp.ID,
+		CreatedAt: chirp.CreatedAt,
+		UpdatedAt: chirp.UpdatedAt,
+		Body:      chirp.Body,
+		UserID:    chirp.UserID,
 	}
 
 	respondWithJSON(w, 201, newChirp)
@@ -110,6 +114,31 @@ func (cfg *apiConfig) getAllChirpsHandler(w http.ResponseWriter, r *http.Request
 	}
 
 	respondWithJSON(w, 200, listChirpsForResponse)
+}
+
+func (cfg *apiConfig) getSingleChirpHandler(w http.ResponseWriter, r *http.Request) {
+	pattern := r.PathValue("chirpID")
+	chirpID, err := uuid.Parse(pattern)
+	if err != nil {
+		respondWithError(w, 400, "Error while trying to get ID from URL")
+		return
+	}
+
+	getChirp, err := cfg.dbQueries.GetChirpByID(r.Context(), chirpID)
+	if err != nil {
+		respondWithError(w, 404, "Chirp not found")
+		return
+	}
+
+	chirp := ChirpJSON{
+		ID:        getChirp.ID,
+		CreatedAt: getChirp.CreatedAt,
+		UpdatedAt: getChirp.UpdatedAt,
+		Body:      getChirp.Body,
+		UserID:    getChirp.UserID,
+	}
+
+	respondWithJSON(w, 200, chirp)
 }
 
 func (cfg *apiConfig) metricsHandler(w http.ResponseWriter, r *http.Request) {
