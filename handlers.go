@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"sync/atomic"
 
+	"github.com/NonStandard-009/chirpy/internal/auth"
 	"github.com/NonStandard-009/chirpy/internal/database"
 	"github.com/google/uuid"
 )
@@ -18,17 +19,24 @@ type apiConfig struct {
 }
 
 func (cfg *apiConfig) createUsersHandler(w http.ResponseWriter, r *http.Request) {
-	type params struct {
-		Email string `json:"email"`
-	}
-	newUserParams := params{}
-
-	if err := helperDecode(r, &newUserParams); err != nil {
+	tmpForDecoding := UserReqParams{}
+	if err := helperDecode(r, &tmpForDecoding); err != nil {
 		respondWithError(w, 400, "Error while trying to decode request")
 		return
 	}
 
-	user, err := cfg.dbQueries.CreateUser(r.Context(), newUserParams.Email)
+	hashedPwd, err := auth.HashPassword(tmpForDecoding.Password)
+	if err != nil {
+		respondWithError(w, 400, "Error while trying to hash password")
+		return
+	}
+
+	newUserParams := database.CreateUserParams{
+		Email:          tmpForDecoding.Email,
+		HashedPassword: hashedPwd,
+	}
+
+	user, err := cfg.dbQueries.CreateUser(r.Context(), newUserParams)
 	if err != nil {
 		log.Printf("Error while trying to create user: %v", err)
 		respondWithError(w, 500, "Error while trying to create user")
@@ -43,6 +51,41 @@ func (cfg *apiConfig) createUsersHandler(w http.ResponseWriter, r *http.Request)
 	}
 
 	respondWithJSON(w, 201, newUser)
+}
+
+func (cfg *apiConfig) loginUserHandler(w http.ResponseWriter, r *http.Request) {
+	user := UserReqParams{}
+	if err := helperDecode(r, &user); err != nil {
+		respondWithError(w, 400, "Error while trying to decode request")
+		return
+	}
+
+	findUser, err := cfg.dbQueries.GetUserByEmail(r.Context(), user.Email)
+	if err != nil {
+		respondWithError(w, 404, "User not found, check if email is correct")
+		return
+	}
+
+	confirm, err := auth.CheckPassword(user.Password, findUser.HashedPassword)
+	if err != nil {
+		log.Printf("Error while trying to confirm password: %s", err)
+		respondWithError(w, 500, "Error while trying to confirm password")
+		return
+	}
+
+	if confirm == false {
+		respondWithError(w, 401, "Unauthorized")
+		return
+	}
+
+	respondUser := UserJSON{
+		ID:        findUser.ID,
+		CreatedAt: findUser.CreatedAt,
+		UpdatedAt: findUser.UpdatedAt,
+		Email:     findUser.Email,
+	}
+
+	respondWithJSON(w, 200, respondUser)
 }
 
 func (cfg *apiConfig) createChirpHandler(w http.ResponseWriter, r *http.Request) {

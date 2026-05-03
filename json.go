@@ -17,6 +17,11 @@ type UserJSON struct {
 	Email     string    `json:"email"`
 }
 
+type UserReqParams struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
 type ChirpJSON struct {
 	ID        uuid.UUID `json:"id"`
 	CreatedAt time.Time `json:"created_at"`
