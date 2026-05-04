@@ -15,11 +15,13 @@ type UserJSON struct {
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 	Email     string    `json:"email"`
+	Token     string    `json:"token,omitempty"`
 }
 
 type UserReqParams struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
+	Email            string `json:"email"`
+	Password         string `json:"password"`
+	ExpiresInSeconds int    `json:"expires_in_seconds"`
 }
 
 type ChirpJSON struct {
@@ -28,6 +30,10 @@ type ChirpJSON struct {
 	UpdatedAt time.Time `json:"updated_at"`
 	Body      string    `json:"body"`
 	UserID    uuid.UUID `json:"user_id"`
+}
+
+type ChirpRequestJSON struct {
+	Body string `json:"body"`
 }
 
 func respondWithJSON(w http.ResponseWriter, code int, payload any) {

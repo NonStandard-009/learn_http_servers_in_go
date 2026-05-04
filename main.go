@@ -18,6 +18,7 @@ func main() {
 
 	dbURL := os.Getenv("DB_URL")
 	platform := os.Getenv("PLATFORM")
+	secret := os.Getenv("JWT_SECRET")
 
 	db, err := sql.Open("postgres", dbURL)
 	if err != nil {
@@ -28,6 +29,7 @@ func main() {
 	cfg := &apiConfig{
 		dbQueries: dbQueries,
 		platform:  platform,
+		jwtSecret: secret,
 	}
 
 	mux := http.NewServeMux()

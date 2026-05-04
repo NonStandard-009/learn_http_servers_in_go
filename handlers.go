@@ -6,28 +6,38 @@ import (
 	"log"
 	"net/http"
 	"sync/atomic"
+	"time"
 
 	"github.com/NonStandard-009/chirpy/internal/auth"
 	"github.com/NonStandard-009/chirpy/internal/database"
 	"github.com/google/uuid"
 )
 
+var profanities = map[string]struct{}{
+	"kerfuffle": {},
+	"sharbert":  {},
+	"fornax":    {},
+}
+
+const defaultTokenExpiration = time.Hour
+
 type apiConfig struct {
 	fileserverHits atomic.Int32
 	dbQueries      *database.Queries
 	platform       string
+	jwtSecret      string
 }
 
 func (cfg *apiConfig) createUsersHandler(w http.ResponseWriter, r *http.Request) {
 	tmpForDecoding := UserReqParams{}
 	if err := helperDecode(r, &tmpForDecoding); err != nil {
-		respondWithError(w, 400, "Error while trying to decode request")
+		respondWithError(w, http.StatusBadRequest, "Error while trying to decode request")
 		return
 	}
 
 	hashedPwd, err := auth.HashPassword(tmpForDecoding.Password)
 	if err != nil {
-		respondWithError(w, 400, "Error while trying to hash password")
+		respondWithError(w, http.StatusBadRequest, "Error while trying to hash password")
 		return
 	}
 
@@ -39,7 +49,7 @@ func (cfg *apiConfig) createUsersHandler(w http.ResponseWriter, r *http.Request)
 	user, err := cfg.dbQueries.CreateUser(r.Context(), newUserParams)
 	if err != nil {
 		log.Printf("Error while trying to create user: %v", err)
-		respondWithError(w, 500, "Error while trying to create user")
+		respondWithError(w, http.StatusInternalServerError, "Error while trying to create user")
 		return
 	}
 
@@ -50,85 +60,108 @@ func (cfg *apiConfig) createUsersHandler(w http.ResponseWriter, r *http.Request)
 		Email:     user.Email,
 	}
 
-	respondWithJSON(w, 201, newUser)
+	respondWithJSON(w, http.StatusCreated, newUser)
 }
 
 func (cfg *apiConfig) loginUserHandler(w http.ResponseWriter, r *http.Request) {
 	user := UserReqParams{}
+
 	if err := helperDecode(r, &user); err != nil {
-		respondWithError(w, 400, "Error while trying to decode request")
+		respondWithError(w, http.StatusBadRequest, "Error while trying to decode request")
 		return
 	}
 
-	findUser, err := cfg.dbQueries.GetUserByEmail(r.Context(), user.Email)
+	tokenExpiration := time.Duration(user.ExpiresInSeconds) * time.Second
+	if tokenExpiration > defaultTokenExpiration || tokenExpiration <= 0 {
+		tokenExpiration = defaultTokenExpiration
+	}
+
+	dbUser, err := cfg.dbQueries.GetUserByEmail(r.Context(), user.Email)
 	if err != nil {
-		respondWithError(w, 404, "User not found, check if email is correct")
+		respondWithError(w, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
 
-	confirm, err := auth.CheckPassword(user.Password, findUser.HashedPassword)
+	confirm, err := auth.CheckPassword(user.Password, dbUser.HashedPassword)
 	if err != nil {
 		log.Printf("Error while trying to confirm password: %s", err)
-		respondWithError(w, 500, "Error while trying to confirm password")
+		respondWithError(w, http.StatusInternalServerError, "Error while trying to confirm password")
 		return
 	}
 
-	if confirm == false {
-		respondWithError(w, 401, "Unauthorized")
+	if !confirm {
+		respondWithError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	newToken, err := auth.MakeJWT(dbUser.ID, cfg.jwtSecret, tokenExpiration)
+	if err != nil {
+		log.Printf("Error while trying to create user token: %s", err)
+		respondWithError(w, http.StatusInternalServerError, "Error while trying to create user token")
 		return
 	}
 
 	respondUser := UserJSON{
-		ID:        findUser.ID,
-		CreatedAt: findUser.CreatedAt,
-		UpdatedAt: findUser.UpdatedAt,
-		Email:     findUser.Email,
+		ID:        dbUser.ID,
+		CreatedAt: dbUser.CreatedAt,
+		UpdatedAt: dbUser.UpdatedAt,
+		Email:     dbUser.Email,
+		Token:     newToken,
 	}
 
-	respondWithJSON(w, 200, respondUser)
+	respondWithJSON(w, http.StatusOK, respondUser)
 }
 
 func (cfg *apiConfig) createChirpHandler(w http.ResponseWriter, r *http.Request) {
-	newChirp := ChirpJSON{}
-
-	if err := helperDecode(r, &newChirp); err != nil {
-		respondWithError(w, 400, "Error while trying to decode request")
+	reqToken, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		log.Printf("GetBearerToken failed: %v", err)
+		respondWithError(w, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
 
-	if len(newChirp.Body) > 140 {
-		respondWithError(w, 400, "Chirp is too long")
+	userID, err := auth.ValidateJWT(reqToken, cfg.jwtSecret)
+	if err != nil {
+		log.Printf("ValidateJWT failed: %v", err)
+		respondWithError(w, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
 
-	cleanMsg := cleanResponse(
-		map[string]struct{}{
-			"kerfuffle": {},
-			"sharbert":  {},
-			"fornax":    {},
-		}, newChirp.Body)
+	chirpBody := ChirpRequestJSON{}
+
+	if err := helperDecode(r, &chirpBody); err != nil {
+		respondWithError(w, http.StatusBadRequest, "Error while trying to decode request")
+		return
+	}
+
+	if len(chirpBody.Body) > 140 {
+		respondWithError(w, http.StatusBadRequest, "Chirp is too long")
+		return
+	}
+
+	cleanMsg := cleanResponse(profanities, chirpBody.Body)
 
 	newChirpParams := database.CreateChirpParams{
 		Body:   cleanMsg,
-		UserID: newChirp.UserID,
+		UserID: userID,
 	}
 
-	chirp, err := cfg.dbQueries.CreateChirp(r.Context(), newChirpParams)
+	newChirp, err := cfg.dbQueries.CreateChirp(r.Context(), newChirpParams)
 	if err != nil {
 		log.Printf("Error while trying to create chirp: %v", err)
-		respondWithError(w, 500, "Error while trying to create chirp")
+		respondWithError(w, http.StatusInternalServerError, "Error while trying to create chirp")
 		return
 	}
 
-	newChirp = ChirpJSON{
-		ID:        chirp.ID,
-		CreatedAt: chirp.CreatedAt,
-		UpdatedAt: chirp.UpdatedAt,
-		Body:      chirp.Body,
-		UserID:    chirp.UserID,
+	responseChirp := ChirpJSON{
+		ID:        newChirp.ID,
+		CreatedAt: newChirp.CreatedAt,
+		UpdatedAt: newChirp.UpdatedAt,
+		Body:      newChirp.Body,
+		UserID:    newChirp.UserID,
 	}
 
-	respondWithJSON(w, 201, newChirp)
+	respondWithJSON(w, http.StatusCreated, responseChirp)
 }
 
 func (cfg *apiConfig) getAllChirpsHandler(w http.ResponseWriter, r *http.Request) {
@@ -139,7 +172,7 @@ func (cfg *apiConfig) getAllChirpsHandler(w http.ResponseWriter, r *http.Request
 	getChirps, err := cfg.dbQueries.GetAllChirps(r.Context())
 	if err != nil {
 		log.Printf("Error while trying to retrieve ALL chirps: %v", err)
-		respondWithError(w, 500, "Error while trying to retrieve ALL chirps")
+		respondWithError(w, http.StatusInternalServerError, "Error while trying to retrieve ALL chirps")
 		return
 	}
 
@@ -156,14 +189,14 @@ func (cfg *apiConfig) getAllChirpsHandler(w http.ResponseWriter, r *http.Request
 		listChirpsForResponse[i] = chirpToJSON
 	}
 
-	respondWithJSON(w, 200, listChirpsForResponse)
+	respondWithJSON(w, http.StatusOK, listChirpsForResponse)
 }
 
 func (cfg *apiConfig) getSingleChirpHandler(w http.ResponseWriter, r *http.Request) {
 	pattern := r.PathValue("chirpID")
 	chirpID, err := uuid.Parse(pattern)
 	if err != nil {
-		respondWithError(w, 400, "Error while trying to get ID from URL")
+		respondWithError(w, http.StatusBadRequest, "Error while trying to get ID from URL")
 		return
 	}
 
@@ -181,7 +214,7 @@ func (cfg *apiConfig) getSingleChirpHandler(w http.ResponseWriter, r *http.Reque
 		UserID:    getChirp.UserID,
 	}
 
-	respondWithJSON(w, 200, chirp)
+	respondWithJSON(w, http.StatusOK, chirp)
 }
 
 func (cfg *apiConfig) metricsHandler(w http.ResponseWriter, r *http.Request) {
@@ -202,13 +235,13 @@ func (cfg *apiConfig) metricsHandler(w http.ResponseWriter, r *http.Request) {
 
 func (cfg *apiConfig) resetHandler(w http.ResponseWriter, r *http.Request) {
 	if cfg.platform != "dev" {
-		respondWithError(w, 403, "Forbidden")
+		respondWithError(w, http.StatusForbidden, "Forbidden")
 		return
 	}
 
 	if err := cfg.dbQueries.DeleteAllUsers(r.Context()); err != nil {
 		log.Printf("Error while trying to delete users: %v", err)
-		respondWithError(w, 500, "Error while trying to delete users")
+		respondWithError(w, http.StatusInternalServerError, "Error while trying to delete users")
 		return
 	}
 
